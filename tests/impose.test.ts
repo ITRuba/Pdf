@@ -7,22 +7,20 @@ const settings = (overrides: Partial<LayoutSettings> = {}): LayoutSettings => ({
 const range = (prefix: string, from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => `${prefix}${from + i}`);
 
-// Independent expectations for the default preset (A4 portrait, 15 mm outer, 5 mm inner, 2×2),
-// derived by hand from millimetres rather than from the layout module.
+// Independent expectations for the default preset (A4 portrait, 15 mm outer margins, no gap
+// between pages, 2×2), derived by hand from millimetres rather than from the layout module.
 const OUTER = 15 * MM;
-const INNER = 5 * MM;
-const CELL_W = 87.5 * MM; // (210 − 2·15 − 5) / 2
-const CELL_H = 131 * MM; // (297 − 2·15 − 5) / 2
-const SCALE = Math.min(CELL_W / A4.width, CELL_H / A4.height); // width-limited: 87.5 / 210
-const DRAWN_H = A4.height * SCALE;
-const V_PAD = (CELL_H - DRAWN_H) / 2; // centred vertically in the cell
+const CELL_W = 90 * MM; // (210 − 2·15) / 2 — A4 pages are width-limited
+const SCALE = CELL_W / A4.width;
+const PAGE_H = A4.height * SCALE; // ≈ 127.3 mm
+const V_OFF = (A4.height - 2 * OUTER - 2 * PAGE_H) / 2; // the 2×2 block is centred vertically
 
 /** Expected bottom-left corner of each 2×2 slot on an A4 portrait sheet (row by row, LTR). */
 const expectedOrigin = [
-  { x: OUTER, y: A4.height - OUTER - CELL_H + V_PAD },
-  { x: OUTER + CELL_W + INNER, y: A4.height - OUTER - CELL_H + V_PAD },
-  { x: OUTER, y: OUTER + V_PAD },
-  { x: OUTER + CELL_W + INNER, y: OUTER + V_PAD },
+  { x: OUTER, y: A4.height - OUTER - V_OFF - PAGE_H },
+  { x: OUTER + CELL_W, y: A4.height - OUTER - V_OFF - PAGE_H },
+  { x: OUTER, y: OUTER + V_OFF },
+  { x: OUTER + CELL_W, y: OUTER + V_OFF },
 ];
 
 describe('default preset: 4 pages per sheet, 2×2, A4, auto orientation', () => {
@@ -46,7 +44,7 @@ describe('default preset: 4 pages per sheet, 2×2, A4, auto orientation', () => 
     ]);
   });
 
-  it('places pages row by row, left to right, with 15 mm outer and 5 mm inner margins', async () => {
+  it('places pages row by row, left to right, touching each other inside 15 mm margins', async () => {
     const src = await makeSimplePdf('a.pdf', range('P', 1, 4));
     const [sheet] = await parsePdf((await imposePdfs([src], settings())).bytes);
 
@@ -57,19 +55,28 @@ describe('default preset: 4 pages per sheet, 2×2, A4, auto orientation', () => 
       expect(hit.scale).toBeCloseTo(10 * SCALE, 3); // uniform scale → aspect ratio preserved
     });
 
-    // Left page touches the 15 mm left margin, right page touches the 15 mm right margin.
-    const p1 = find(sheet, 'P1');
-    const p2 = find(sheet, 'P2');
-    const p1Right = p1.x + A4.width * SCALE;
+    const [p1, p2, p3] = ['P1', 'P2', 'P3'].map((l) => find(sheet, l));
+    const pageW = A4.width * SCALE;
+    // Left page on the 15 mm left margin, right page on the 15 mm right margin.
     expect(p1.x / MM).toBeCloseTo(15, 3);
-    expect((A4.width - (p2.x + A4.width * SCALE)) / MM).toBeCloseTo(15, 3);
-    // 5 mm gap between the columns.
-    expect((p2.x - p1Right) / MM).toBeCloseTo(5, 3);
-    // Vertical gap between rows' cells is 5 mm (pages are centred within 131 mm cells).
-    const p3 = find(sheet, 'P3');
-    const topCellBottom = p1.y - V_PAD;
-    const bottomCellTop = p3.y - V_PAD + CELL_H;
-    expect((topCellBottom - bottomCellTop) / MM).toBeCloseTo(5, 3);
+    expect((A4.width - (p2.x + pageW)) / MM).toBeCloseTo(15, 3);
+    // No space between pages, horizontally or vertically.
+    expect((p2.x - (p1.x + pageW)) / MM).toBeCloseTo(0, 3);
+    expect((p1.y - (p3.y + PAGE_H)) / MM).toBeCloseTo(0, 3);
+    // Top and bottom margins are equal and at least 15 mm.
+    expect((A4.height - (p1.y + PAGE_H)) / MM).toBeCloseTo(p3.y / MM, 3);
+    expect(p3.y).toBeGreaterThanOrEqual(OUTER);
+  });
+
+  it('puts exactly the inner margin between pages when one is set', async () => {
+    const src = await makeSimplePdf('a.pdf', range('P', 1, 4));
+    const { bytes, plan } = await imposePdfs([src], settings({ gutter: 5 }));
+    const [sheet] = await parsePdf(bytes);
+    const [p1, p2, p3] = ['P1', 'P2', 'P3'].map((l) => find(sheet, l));
+    const { width, height } = plan.sheets[0].placements[0].rect;
+    expect((p2.x - (p1.x + width)) / MM).toBeCloseTo(5, 3);
+    expect((p1.y - (p3.y + height)) / MM).toBeCloseTo(5, 3);
+    expect(p1.x / MM).toBeCloseTo(15, 3);
   });
 
   it('keeps every page inside the printable area and never crops content', async () => {
@@ -107,10 +114,10 @@ describe('default preset: 4 pages per sheet, 2×2, A4, auto orientation', () => 
     expect(sheet.width).toBeCloseTo(A4.height, 2);
     expect(sheet.height).toBeCloseTo(A4.width, 2);
     expect(labels(sheet)).toEqual(['L1', 'L2', 'L3', 'L4']);
-    // Landscape pages in 131 × 87.5 mm cells are height-limited: the top row touches the
+    // Landscape pages are height-limited (2 × 90 mm tall): the top row touches the
     // 15 mm top margin, the bottom row the 15 mm bottom margin.
     const l1 = find(sheet, 'L1');
-    expect((A4.width - (l1.y + 87.5 * MM)) / MM).toBeCloseTo(15, 3);
+    expect((A4.width - (l1.y + 90 * MM)) / MM).toBeCloseTo(15, 3);
     expect(find(sheet, 'L3').y / MM).toBeCloseTo(15, 3);
     expect(find(sheet, 'L1').y).toBeGreaterThan(find(sheet, 'L3').y);
   });
@@ -182,7 +189,10 @@ describe('options', () => {
       const [sheet] = await parsePdf((await imposePdfs([src], settings({ readingOrder }))).bytes);
       return ['P1', 'P2', 'P3', 'P4'].map((l) => {
         const h = find(sheet, l);
-        return `${h.y > A4.height / 2 ? 'T' : 'B'}${h.x < A4.width / 2 ? 'L' : 'R'}`;
+        // Labels sit at each page's bottom-left corner; compare the page centre.
+        const cx = h.x + (A4.width * SCALE) / 2;
+        const cy = h.y + PAGE_H / 2;
+        return `${cy > A4.height / 2 ? 'T' : 'B'}${cx < A4.width / 2 ? 'L' : 'R'}`;
       });
     };
     expect(await pos('row-ltr')).toEqual(['TL', 'TR', 'BL', 'BR']);
@@ -218,10 +228,15 @@ describe('options', () => {
     expect(sheet.height).toBeCloseTo(792, 1);
     expect(labels(sheet)).toEqual(range('P', 1, 9));
     const cells = plan.cells.flat();
+    // A4 pages on Letter are width-limited: left/right margins exact…
     expect(Math.min(...cells.map((c) => c.x)) / MM).toBeCloseTo(40, 4);
     expect((612 - Math.max(...cells.map((c) => c.x + c.width))) / MM).toBeCloseTo(20, 4);
-    expect(Math.min(...cells.map((c) => c.y)) / MM).toBeCloseTo(30, 4);
-    expect((792 - Math.max(...cells.map((c) => c.y + c.height))) / MM).toBeCloseTo(10, 4);
+    // …and the block is centred vertically, keeping at least the requested top/bottom margins.
+    const bottomGap = Math.min(...cells.map((c) => c.y)) / MM;
+    const topGap = (792 - Math.max(...cells.map((c) => c.y + c.height))) / MM;
+    expect(bottomGap).toBeGreaterThanOrEqual(30);
+    expect(topGap).toBeGreaterThanOrEqual(10);
+    expect(bottomGap - 30).toBeCloseTo(topGap - 10, 4);
   });
 
   it('plain merge (1 per sheet) keeps page count', async () => {

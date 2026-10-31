@@ -66,12 +66,12 @@ export const DEFAULT_SETTINGS: LayoutSettings = Object.freeze({
   paperSize: 'A4',
   orientation: 'auto',
   margins: Object.freeze({ top: 15, right: 15, bottom: 15, left: 15 }),
-  gutter: 5,
+  gutter: 0,
   borders: false,
   fileName: 'merged',
 }) as LayoutSettings;
 
-export const STORAGE_KEY = 'pdf-merger:settings:v1';
+export const STORAGE_KEY = 'pdf-merger:settings:v2';
 
 const MAX_GRID = 8;
 const MAX_MM = 100;

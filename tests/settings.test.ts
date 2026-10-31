@@ -27,7 +27,7 @@ describe('default preset', () => {
       paperSize: 'A4',
       orientation: 'auto',
       margins: { top: 15, right: 15, bottom: 15, left: 15 },
-      gutter: 5,
+      gutter: 0,
       borders: false,
     });
     expect(summarizeSettings(DEFAULT_SETTINGS)).toBe('4-up · 2×2 · A4 · Auto');

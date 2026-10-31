@@ -22,7 +22,7 @@ Everything runs in your browser. Files are never uploaded anywhere; there is no 
 | Reading direction | Row by row, left to right |
 | Paper | A4, orientation automatic |
 | Outer margins | 15 mm on all sides |
-| Inner margin | 5 mm |
+| Space between pages | None, pages touch (adjustable) |
 | Borders | Off |
 
 Everything can be changed: 1/2/4/6/8/9/16 pages or any custom grid up to 8 × 8, four reading directions, A3/A4/A5/Letter/Legal, portrait/landscape/auto, per-side margins, borders and the output file name.
@@ -30,7 +30,8 @@ Everything can be changed: 1/2/4/6/8/9/16 pages or any custom grid up to 8 × 8,
 ### How the layout works
 
 - Pages are embedded as **vector form XObjects** with pdf-lib, so text and graphics stay sharp and selectable. Nothing is rasterised.
-- Each page is scaled uniformly to fit its cell and centred. The **aspect ratio is preserved, with no cropping or distortion**, and mixed page sizes are fine.
+- The pages form one block, sitting edge to edge (or with exactly the inner margin you set), centred inside the outer margins. The margins are a minimum: along the direction the pages fill, they are exact.
+- Each page is scaled uniformly to fit its cell. The **aspect ratio is preserved, with no cropping or distortion**, and mixed page sizes are fine.
 - Each page's **crop box** and **/Rotate** are respected, so pages look exactly as they do in a PDF viewer.
 - **Auto orientation** picks portrait or landscape for the whole document, whichever renders the pages largest. Portrait pages give portrait A4 sheets; landscape slides give landscape sheets.
 - **Incomplete final sheet**: the remaining pages keep the same size and position as on full sheets, and the empty cells stay blank.
@@ -57,7 +58,7 @@ npm run preview    # serve the production build locally
 `tests/impose.test.ts` generates real PDFs, runs them through the engine, then **parses the output with pdf.js**, a PDF implementation independent of pdf-lib. It verifies:
 
 - sheet dimensions are exactly A4 (210 × 297 mm), and landscape when auto orientation calls for it
-- 15 mm outer margins and 5 mm inner gaps, measured in millimetres from the drawn content
+- 15 mm outer margins and zero space between pages (or exactly the inner margin when one is set), measured in millimetres from the drawn content
 - 2 × 2 placement and row-by-row, left-to-right order across several merged files
 - uniform scaling (aspect ratio preserved) and no clipped content
 - incomplete final sheets, rotated pages (/Rotate 90/180/270), crop boxes and mixed page sizes
